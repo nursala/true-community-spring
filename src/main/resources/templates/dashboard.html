@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
+      lang="he" dir="rtl">
+<head th:replace="~{fragments/layout :: head('TRUE · האזור שלי')}"></head>
+<body class="bg-light">
+
+<nav th:replace="~{fragments/layout :: navbar('dashboard')}"></nav>
+
+<main class="container py-4" th:object="${dashboard}">
+
+    <!-- Profile/password flash alerts: present only on a full-page redirect (not in the SSE fragment), so kept outside the live region -->
+    <div th:if="${profileSuccess}" class="alert alert-success alert-dismissible fade show" role="alert">
+        <span th:text="${profileSuccess}">הפעולה הושלמה בהצלחה</span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="סגירה"></button>
+    </div>
+    <div th:if="${profileError}" class="alert alert-danger alert-dismissible fade show" role="alert">
+        <span th:text="${profileError}">אירעה שגיאה</span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="סגירה"></button>
+    </div>
+    <div th:if="${passwordSuccess}" class="alert alert-success alert-dismissible fade show" role="alert">
+        <span th:text="${passwordSuccess}">הפעולה הושלמה בהצלחה</span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="סגירה"></button>
+    </div>
+    <div th:if="${passwordError}" class="alert alert-danger alert-dismissible fade show" role="alert">
+        <span th:text="${passwordError}">אירעה שגיאה</span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="סגירה"></button>
+    </div>
+
+    <!-- LIVE DATA: stable wrapper id stays static; SSE swaps its innerHTML with the same fragment -->
+    <div id="dashboardLiveData">
+        <div th:fragment="liveData" th:object="${dashboard}">
+
+            <!-- PROFILE IDENTITY + TRUST SCORE (inside the live fragment so the trust score updates over SSE) -->
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-body d-flex flex-wrap align-items-center gap-3">
+                    <!-- identity (start): avatar + username + email + account action buttons -->
+                    <div class="d-flex align-items-center gap-3 min-w-0">
+                        <div class="rounded-circle bg-navy text-white d-flex align-items-center justify-content-center flex-shrink-0"
+                             style="width:64px;height:64px;font-size:1.5rem">
+                            <i class="bi bi-person-fill"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <h1 class="h4 fw-bold mb-1 text-break" th:text="${dashboard.username}">user</h1>
+                            <div class="text-muted small text-break" th:text="${dashboard.email}">email</div>
+                            <div class="d-flex flex-wrap gap-2 mt-2">
+                                <button type="button" class="btn btn-outline-secondary btn-sm"
+                                        data-bs-toggle="modal" data-bs-target="#usernameModal">
+                                    <i class="bi bi-pencil"></i> ערוך שם משתמש
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm"
+                                        data-bs-toggle="modal" data-bs-target="#passwordModal">
+                                    <i class="bi bi-key"></i> שינוי סיסמה
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- trust score (push to the end on wide screens; wraps below on mobile) -->
+                    <div class="ms-auto" style="min-width:220px">
+                        <div class="text-muted small">ציון אמון</div>
+                        <div class="display-6 fw-bold text-navy"
+                             th:text="${#numbers.formatDecimal(dashboard.trustScore,1,2)} + ' / 5'">0</div>
+                        <div class="progress" style="height:8px">
+                            <div class="progress-bar bg-navy" th:style="'width:' + ${dashboard.trustScore * 20} + '%'"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STATS (always over ALL votes) -->
+            <div class="row g-3 mb-4">
+                <div class="col-6 col-lg-3">
+                    <div class="card border-0 shadow-sm h-100"><div class="card-body">
+                        <div class="text-muted small">דיוק מול הכרעות העורך</div>
+                        <div class="fs-3 fw-bold" th:text="*{accuracyPercent} + '%'">0%</div>
+                    </div></div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="card border-0 shadow-sm h-100"><div class="card-body">
+                        <div class="text-muted small">סך הצבעות</div>
+                        <div class="fs-3 fw-bold" th:text="*{totalVotes}">0</div>
+                    </div></div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="card border-0 shadow-sm h-100"><div class="card-body">
+                        <div class="text-muted small">אמירות שהוכרעו</div>
+                        <div class="fs-3 fw-bold" th:text="*{decidedCount}">0</div>
+                    </div></div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="card border-0 shadow-sm h-100"><div class="card-body">
+                        <div class="text-muted small">התאמות לעורך</div>
+                        <div class="fs-3 fw-bold text-success" th:text="*{matchCount}">0</div>
+                    </div></div>
+                </div>
+            </div>
+
+            <!-- EDITOR PANEL (editors only) -->
+            <div class="card border-0 shadow-sm mb-4"
+                 th:if="${dashboard.editorStats != null}" th:with="stats=${dashboard.editorStats}">
+                <div class="card-body">
+                    <h2 class="h5 fw-bold mb-3"><i class="bi bi-clipboard2-check text-navy"></i> האזור של העורך</h2>
+                    <p class="mb-3">סה״כ הכרעות שפרסמת:
+                        <span class="fw-bold" th:text="${stats.totalDecisions}">0</span></p>
+
+                    <div th:if="${stats.totalDecisions == 0}" class="text-muted small">עדיין לא פרסמת הכרעות.</div>
+
+                    <div th:unless="${stats.totalDecisions == 0}">
+                        <div class="d-flex align-items-center gap-2 mb-2" th:each="entry : ${stats.verdictDistribution}">
+                            <span class="tier" th:classappend="'tier-' + ${entry.key}" th:text="${entry.key.label}"
+                                  style="min-width:96px">verdict</span>
+                            <div class="progress flex-grow-1" style="height:14px">
+                                <div class="progress-bar" th:classappend="'seg-' + ${entry.key}"
+                                     th:style="'width:' + ${stats.maxCount > 0 ? (entry.value * 100 / stats.maxCount) : 0} + '%'"></div>
+                            </div>
+                            <span class="small fw-bold text-start" style="min-width:28px" th:text="${entry.value}">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VOTING HISTORY (filter affects ONLY these rows) -->
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3"
+                         th:with="vName=${historyFilter.verdict != null ? historyFilter.verdict.name() : ''}">
+                        <h2 class="h5 fw-bold mb-0">היסטוריית ההצבעות</h2>
+                        <div class="d-flex flex-wrap align-items-center gap-2">
+                            <!-- outcome segments -->
+                            <div class="btn-group btn-group-sm" role="group" aria-label="סינון תוצאה">
+                                <a th:href="@{/dashboard(outcome='ALL',verdict=${vName})}" class="btn"
+                                   th:classappend="${historyFilter.outcome.name() == 'ALL'} ? 'btn-navy' : 'btn-outline-secondary'">הכל</a>
+                                <a th:href="@{/dashboard(outcome='MATCHED',verdict=${vName})}" class="btn"
+                                   th:classappend="${historyFilter.outcome.name() == 'MATCHED'} ? 'btn-navy' : 'btn-outline-secondary'">תאמו לעורך</a>
+                                <a th:href="@{/dashboard(outcome='MISMATCHED',verdict=${vName})}" class="btn"
+                                   th:classappend="${historyFilter.outcome.name() == 'MISMATCHED'} ? 'btn-navy' : 'btn-outline-secondary'">לא תאמו</a>
+                                <a th:href="@{/dashboard(outcome='UNDECIDED',verdict=${vName})}" class="btn"
+                                   th:classappend="${historyFilter.outcome.name() == 'UNDECIDED'} ? 'btn-navy' : 'btn-outline-secondary'">טרם הוכרעו</a>
+                            </div>
+                            <!-- verdict dropdown -->
+                            <form th:action="@{/dashboard}" method="get" class="m-0">
+                                <input type="hidden" name="outcome" th:value="${historyFilter.outcome.name()}">
+                                <select name="verdict" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+                                    <option value="" th:selected="${historyFilter.verdict == null}">כל הסיווגים</option>
+                                    <option th:each="v : ${verdicts}" th:value="${v.name()}" th:text="${v.label}"
+                                            th:selected="${historyFilter.verdict != null and historyFilter.verdict.name() == v.name()}">verdict</option>
+                                </select>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div th:if="${#lists.isEmpty(dashboard.history)}" class="text-muted small">אין רשומות התואמות לסינון.</div>
+                    <div class="table-responsive" th:unless="${#lists.isEmpty(dashboard.history)}">
+                        <table class="table align-middle">
+                            <thead>
+                            <tr>
+                                <th style="width:45%">האמירה</th>
+                                <th>ההצבעה שלי</th>
+                                <th>הכרעת העורך</th>
+                                <th>שינוי ציון (Trust Score)</th>
+                                <th>תאריך</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <tr th:each="h : ${dashboard.history}">
+                                <td>
+                                    <a th:href="@{/arena/{id}(id=${h.statementId})}" class="text-decoration-none text-dark"
+                                       th:text="${#strings.abbreviate(h.statementText, 70)}">statement</a>
+                                </td>
+                                <td><span class="tier" th:classappend="'tier-' + ${h.userVerdict}" th:text="${h.userVerdict.label}">v</span></td>
+                                <td>
+                                    <span th:if="${h.editorVerdict != null}" class="tier"
+                                          th:classappend="'tier-' + ${h.editorVerdict}" th:text="${h.editorVerdict.label}">v</span>
+                                    <span th:unless="${h.editorVerdict != null}" class="text-muted">—</span>
+                                </td>
+                                <td>
+                                    <span th:if="${h.scoreChange != null}" class="fw-bold"
+                                          th:classappend="${h.scoreChange >= 0} ? 'text-success' : 'text-danger'"
+                                          th:text="${(h.scoreChange >= 0 ? '+' : '') + #numbers.formatDecimal(h.scoreChange, 1, 2)}">+0.00</span>
+                                    <span th:unless="${h.scoreChange != null}" class="text-muted">—</span>
+                                    <small th:if="${!#strings.isEmpty(h.scoreReason)}" class="d-block text-muted"
+                                           th:text="${h.scoreReason}">reason</small>
+                                </td>
+                                <td class="text-muted small" th:text="${#temporals.format(h.votedAt, 'dd/MM/yyyy')}">date</td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Account modals: kept OUTSIDE #dashboardLiveData so the SSE innerHTML swap never destroys them.
+         th:action POST forms get the Spring Security CSRF token auto-injected (same as the old inline forms). -->
+    <div class="modal fade" id="usernameModal" tabindex="-1" aria-labelledby="usernameModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 rounded-4">
+                <form th:action="@{/dashboard/profile}" th:object="${profileUpdateForm}" method="post">
+                    <div class="modal-header flex-shrink-0">
+                        <h2 class="modal-title h5 fw-bold" id="usernameModalLabel"><i class="bi bi-pencil text-navy"></i> ערוך שם משתמש</h2>
+                        <button type="button" class="btn-close m-0" data-bs-dismiss="modal" aria-label="סגירה"></button>
+                    </div>
+                    <div class="modal-body p-3">
+                        <label for="username" class="form-label fw-bold small">שם משתמש</label>
+                        <input id="username" type="text" class="form-control" th:field="*{username}"
+                               th:classappend="${#fields.hasErrors('username')} ? 'is-invalid'">
+                        <div class="text-danger small mt-1" th:if="${#fields.hasErrors('username')}" th:errors="*{username}"></div>
+                    </div>
+                    <div class="modal-footer flex-shrink-0 d-flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">ביטול</button>
+                        <button type="submit" class="btn btn-navy fw-bold flex-fill">שמור</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="passwordModal" tabindex="-1" aria-labelledby="passwordModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 rounded-4">
+                <form th:action="@{/dashboard/password}" th:object="${passwordChangeForm}" method="post">
+                    <div class="modal-header flex-shrink-0">
+                        <h2 class="modal-title h5 fw-bold" id="passwordModalLabel"><i class="bi bi-key text-navy"></i> שינוי סיסמה</h2>
+                        <button type="button" class="btn-close m-0" data-bs-dismiss="modal" aria-label="סגירה"></button>
+                    </div>
+                    <div class="modal-body p-3">
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <label for="currentPassword" class="form-label fw-bold small">סיסמה נוכחית</label>
+                                <input id="currentPassword" type="password" class="form-control" th:field="*{currentPassword}"
+                                       th:classappend="${#fields.hasErrors('currentPassword')} ? 'is-invalid'">
+                                <div class="text-danger small mt-1" th:if="${#fields.hasErrors('currentPassword')}" th:errors="*{currentPassword}"></div>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="newPassword" class="form-label fw-bold small">סיסמה חדשה</label>
+                                <input id="newPassword" type="password" class="form-control" th:field="*{newPassword}"
+                                       th:classappend="${#fields.hasErrors('newPassword')} ? 'is-invalid'">
+                                <div class="text-danger small mt-1" th:if="${#fields.hasErrors('newPassword')}" th:errors="*{newPassword}"></div>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="confirmPassword" class="form-label fw-bold small">אימות סיסמה</label>
+                                <input id="confirmPassword" type="password" class="form-control" th:field="*{confirmPassword}"
+                                       th:classappend="${#fields.hasErrors('confirmPassword')} ? 'is-invalid'">
+                                <div class="text-danger small mt-1" th:if="${#fields.hasErrors('confirmPassword')}" th:errors="*{confirmPassword}"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer flex-shrink-0 d-flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-outline-secondary flex-fill" data-bs-dismiss="modal">ביטול</button>
+                        <button type="submit" class="btn btn-navy fw-bold flex-fill">עדכן סיסמה</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</main>
+
+<footer th:replace="~{fragments/layout :: footer}"></footer>
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+
+<!-- Reopen the account modal that failed validation so its inline errors are visible -->
+<script th:if="${openModal != null}" th:inline="javascript">
+document.addEventListener('DOMContentLoaded', function () {
+    const which = /*[[${openModal}]]*/ '';
+    const modalId = which === 'password' ? 'passwordModal' : 'usernameModal';
+    const el = document.getElementById(modalId);
+    if (el && window.bootstrap && window.bootstrap.Modal) {
+        window.bootstrap.Modal.getOrCreateInstance(el).show();
+    }
+});
+</script>
+
+<!-- Live dashboard: swap the liveData fragment in place on a per-user SSE event -->
+<script th:inline="javascript">
+document.addEventListener('DOMContentLoaded', function () {
+    if (!window.EventSource) {
+        return;
+    }
+    const source = new EventSource(/*[[@{/dashboard/events}]]*/ '');
+    const fragmentUrl = /*[[@{/dashboard/data-fragment}]]*/ '';
+
+    source.addEventListener('DASHBOARD_UPDATED', function () {
+        fetch(fragmentUrl, {headers: {'X-Requested-With': 'fetch'}})
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error('dashboard fragment request failed');
+                }
+                return response.text();
+            })
+            .then(function (html) {
+                const container = document.getElementById('dashboardLiveData');
+                if (container) {
+                    container.innerHTML = html;
+                } else {
+                    window.location.reload();
+                }
+            })
+            .catch(function () {
+                window.location.reload();
+            });
+    });
+
+    function closeSource() {
+        source.close();
+    }
+    window.addEventListener('pagehide', closeSource);
+    window.addEventListener('beforeunload', closeSource);
+});
+</script>
+</body>
+</html>

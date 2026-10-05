@@ -1,0 +1,343 @@
+### TRUE Community - API test script (IntelliJ / VS Code REST Client)
+###
+### DEPRECATED: This file contains outdated examples (English topic names and
+### statement ids that no longer match the current seed data). Use
+### http/api-tests.http instead, which reflects the current Hebrew seed topics
+### and the full multi-topic architecture.
+###
+### HOW TO RUN
+### 1. Start MySQL (docker compose up -d) and the app (./mvnw spring-boot:run).
+### 2. Run requests top-to-bottom. The HTTP client keeps cookies between
+###    requests in the same run, so the login below establishes the session
+###    used by the authenticated calls.
+###
+### IMPORTANT - two preconditions for the authenticated POST tests:
+###   (a) CSRF: the app uses Spring Security defaults, so CSRF protection is
+###       ON. A token-less POST (login or API) returns 403. To run the write
+###       tests, disable CSRF for the API in SecurityConfig, e.g.:
+###           http.csrf(csrf -> csrf.disable())
+###       (Do this only for local API testing.)
+###   (b) ROLES: the only seeded account is the EDITOR. There is no public
+###       registration endpoint, so to exercise the "standard USER -> 403"
+###       cases you must first create a USER (e.g. via SQL insert) and log in
+###       as that user. See the @userEmail variables at the bottom.
+###
+### Seed data (fresh ex4 schema, see DataInitializer): 10 Hebrew topics
+### (ids 1..10: 1=חוץ 2=ביטחון 3=כלכלה ...) and 12 statements (ids 1..12).
+### Use Hebrew keyword/topic values for search examples (e.g. ?topic=כלכלה).
+
+@host = http://localhost:8080
+@editorEmail = editor@truecommunity.local
+@editorPassword = editor123
+
+############################################################
+# 1. AUTHENTICATION
+############################################################
+
+### AUTH-001  Login as editor (valid) -> 302 to / + JSESSIONID cookie
+POST {{host}}/login
+Content-Type: application/x-www-form-urlencoded
+
+username={{editorEmail}}&password={{editorPassword}}
+
+### AUTH-002  Login wrong password -> 302 /login?error
+POST {{host}}/login
+Content-Type: application/x-www-form-urlencoded
+
+username={{editorEmail}}&password=wrongpass
+
+### AUTH-004  Login with username instead of email -> fails (identity is email)
+POST {{host}}/login
+Content-Type: application/x-www-form-urlencoded
+
+username=editor&password={{editorPassword}}
+
+### AUTH-006  Protected page while unauthenticated -> 302 /login
+# (Run before AUTH-001, or after AUTH-005 logout.)
+GET {{host}}/dashboard
+
+############################################################
+# 2. STATEMENTS - read & search (public)
+############################################################
+
+### STMT-001  Get existing statement (single topic)
+GET {{host}}/api/statements/1
+
+### STMT-002  Multi-topic statement reflects M2M topics
+GET {{host}}/api/statements/3
+
+### STMT-003  Non-existent statement -> 404
+GET {{host}}/api/statements/9999
+
+### STMT-004  Pending statements
+GET {{host}}/api/statements/pending
+
+### STMT-005  Search by keyword
+GET {{host}}/api/statements/search?keyword=Eiffel
+
+### STMT-006  Search by topic name (M2M join) -> statements 1 & 3
+GET {{host}}/api/statements/search?topic=Science
+
+### STMT-007  Topic search is case-insensitive
+GET {{host}}/api/statements/search?topic=science
+
+### STMT-008  Search by status
+GET {{host}}/api/statements/search?status=PENDING
+
+### STMT-011  Non-numeric id -> 400
+GET {{host}}/api/statements/abc
+
+############################################################
+# 3. VOTING (authenticated; run AUTH-001 first)
+############################################################
+
+### VOTE-001  Happy path: verdict + suggested topic + evidence -> 201
+POST {{host}}/api/statements/1/votes
+Content-Type: application/json
+
+{
+  "verdict": "TRUE",
+  "explanation": "Confirmed by multiple sources",
+  "suggestedTopicId": 1,
+  "evidenceUrl": "https://www.nist.gov/",
+  "evidenceDescription": "Reference page"
+}
+
+### VOTE-002  Happy path: suggested topic, no evidence -> 201
+POST {{host}}/api/statements/3/votes
+Content-Type: application/json
+
+{
+  "verdict": "FALSE",
+  "suggestedTopicId": 3
+}
+
+### VOTE-003  Missing verdict -> 400
+POST {{host}}/api/statements/2/votes
+Content-Type: application/json
+
+{
+  "suggestedTopicId": 2
+}
+
+### VOTE-004  Missing suggested topic -> 400 (a topic suggestion is required)
+POST {{host}}/api/statements/2/votes
+Content-Type: application/json
+
+{
+  "verdict": "TRUE"
+}
+
+### VOTE-006  Invalid verdict enum -> 400
+POST {{host}}/api/statements/2/votes
+Content-Type: application/json
+
+{
+  "verdict": "MAYBE",
+  "suggestedTopicId": 2
+}
+
+### VOTE-007  Non-existent suggested topic id -> 400 (InvalidTopicSelection)
+POST {{host}}/api/statements/2/votes
+Content-Type: application/json
+
+{
+  "verdict": "TRUE",
+  "suggestedTopicId": 999
+}
+
+### VOTE-010  Vote on non-existent statement -> 404
+POST {{host}}/api/statements/9999/votes
+Content-Type: application/json
+
+{
+  "verdict": "TRUE",
+  "suggestedTopicId": 1
+}
+
+### VOTE-011  Duplicate vote (re-run VOTE-001 target) -> 409
+POST {{host}}/api/statements/1/votes
+Content-Type: application/json
+
+{
+  "verdict": "TRUE",
+  "suggestedTopicId": 1
+}
+
+### VOTE-013  Evidence url only (no description) -> 201, evidence NOT saved
+POST {{host}}/api/statements/2/votes
+Content-Type: application/json
+
+{
+  "verdict": "TRUE",
+  "suggestedTopicId": 2,
+  "evidenceUrl": "https://example.com"
+}
+
+### VOTE-014  Identity comes from session; extra userId in body is ignored -> 201
+# (Use a statement you have not yet voted on.)
+POST {{host}}/api/statements/2/votes
+Content-Type: application/json
+
+{
+  "verdict": "MISLEADING",
+  "suggestedTopicId": 2,
+  "userId": 999
+}
+
+############################################################
+# 4. CONSENSUS (public)
+############################################################
+
+### CONS-001  Verdict consensus with votes
+GET {{host}}/api/statements/1/consensus
+
+### CONS-002  Verdict consensus, zero votes (edge) -> totalVotes 0
+GET {{host}}/api/statements/2/consensus
+
+### CONS-003  Consensus, non-existent statement -> 404
+GET {{host}}/api/statements/9999/consensus
+
+### CONS-004  Topic consensus (dynamic, from vote_topics)
+GET {{host}}/api/statements/3/topic-consensus
+
+### CONS-005  Topic consensus, no votes (edge) -> []
+GET {{host}}/api/statements/2/topic-consensus
+
+### CONS-006  Topic consensus, non-existent statement -> 404
+GET {{host}}/api/statements/9999/topic-consensus
+
+############################################################
+# 5. COMMENTING
+############################################################
+
+### CMT-001  Add valid comment (authenticated) -> 201
+POST {{host}}/api/statements/1/comments
+Content-Type: application/json
+
+{
+  "content": "This matches the cited source."
+}
+
+### CMT-002  Empty content -> 400
+POST {{host}}/api/statements/1/comments
+Content-Type: application/json
+
+{
+  "content": ""
+}
+
+### CMT-005  Comment on non-existent statement -> 404
+POST {{host}}/api/statements/9999/comments
+Content-Type: application/json
+
+{
+  "content": "hello"
+}
+
+### CMT-007  List comments (public) -> newest first
+GET {{host}}/api/statements/1/comments
+
+### CMT-008  List comments, none yet (edge) -> []
+GET {{host}}/api/statements/2/comments
+
+############################################################
+# 6. EDITOR DECISIONS (requires editor session - AUTH-001)
+############################################################
+
+### EDIT-001  Editor publishes decision -> 201, statement DECIDED, trust scores updated
+POST {{host}}/api/editor/statements/1/decision
+Content-Type: application/json
+
+{
+  "finalVerdict": "TRUE",
+  "notes": "Confirmed by authoritative sources."
+}
+
+### EDIT-002  Missing finalVerdict -> 400
+POST {{host}}/api/editor/statements/3/decision
+Content-Type: application/json
+
+{
+  "notes": "no verdict"
+}
+
+### EDIT-004  Duplicate decision on same statement -> 409
+POST {{host}}/api/editor/statements/1/decision
+Content-Type: application/json
+
+{
+  "finalVerdict": "FALSE",
+  "notes": "second attempt"
+}
+
+### EDIT-005  Decision on non-existent statement -> 404
+POST {{host}}/api/editor/statements/9999/decision
+Content-Type: application/json
+
+{
+  "finalVerdict": "TRUE"
+}
+
+### EDIT-008  Get existing decision (editor) -> 200
+GET {{host}}/api/editor/statements/1/decision
+
+### EDIT-009  Get decision, none published -> 404
+GET {{host}}/api/editor/statements/3/decision
+
+############################################################
+# 7. USERS & LEADERBOARD
+############################################################
+
+### USER-001  Leaderboard (public) -> 200
+GET {{host}}/api/users/leaderboard
+
+### USER-002  Get user by id (authenticated) -> 200
+GET {{host}}/api/users/1
+
+### USER-004  Non-existent user -> 404
+GET {{host}}/api/users/9999
+
+############################################################
+# 8/10. SECURITY - standard USER vs EDITOR  (manual setup required)
+############################################################
+# There is no registration endpoint, so create a USER directly, e.g.:
+#   INSERT INTO users (username,email,password,role,trust_score,created_at)
+#   VALUES ('alice','alice@x.com',
+#           '$2a$10$<bcrypt-hash-of-secret123>','USER',1.0,NOW(6));
+# Then log in as that user and re-run the editor calls to assert 403.
+
+@userEmail = alice@x.com
+@userPassword = secret123
+
+### USER-LOGIN  Log in as standard USER
+POST {{host}}/login
+Content-Type: application/x-www-form-urlencoded
+
+username={{userEmail}}&password={{userPassword}}
+
+### EDIT-006  USER attempts editor decision -> 403
+POST {{host}}/api/editor/statements/2/decision
+Content-Type: application/json
+
+{
+  "finalVerdict": "TRUE"
+}
+
+### EDIT-010  USER attempts to read editor decision -> 403
+GET {{host}}/api/editor/statements/1/decision
+
+### USER-003 / VOTE-012  Logout, then unauthenticated calls
+POST {{host}}/logout
+
+### USER-003  Get user by id while unauthenticated -> 401
+GET {{host}}/api/users/1
+
+### VOTE-012  Vote while unauthenticated -> 401 (intended) / 403 if CSRF on
+POST {{host}}/api/statements/2/votes
+Content-Type: application/json
+
+{
+  "verdict": "TRUE",
+  "suggestedTopicId": 2
+}

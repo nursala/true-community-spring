@@ -1,0 +1,147 @@
+﻿<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="he" dir="rtl">
+<body>
+<section th:fragment="consensusVisualization(consensus, leadingVerdict, leadingPercent, verdicts)"
+         th:if="${consensus != null}"
+         class="card border-0 shadow-sm rounded-4 h-100">
+    <div class="card-body p-3 p-lg-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <h3 class="h6 fw-bold mb-0"><i class="bi bi-bar-chart-line text-navy"></i> קונצנזוס קהילתי</h3>
+            <span class="badge text-bg-light border" th:text="${consensus.totalVotes} + ' הצבעות'">0 הצבעות</span>
+        </div>
+
+        <div class="consensus-bar mb-4" role="img" aria-label="פילוח קונצנזוס קהילתי">
+            <span class="seg" th:each="verdict : ${verdicts}"
+                  th:if="${consensus.percentagesByVerdict.get(verdict) > 0}"
+                  th:classappend="'seg-' + ${verdict}"
+                  th:style="'width:' + ${consensus.percentagesByVerdict.get(verdict)} + '%'"
+                  th:title="${verdict.label}"></span>
+        </div>
+
+        <p class="small text-muted mb-3" th:if="${consensus.totalVotes == 0}">אין הצבעות עדיין.</p>
+
+        <div th:each="verdict : ${verdicts}" class="d-flex align-items-center gap-3 mb-3">
+            <span class="d-flex align-items-center gap-2" style="min-width: 104px">
+                <span class="verdict-dot" style="width: .75rem; height: .75rem"
+                      th:classappend="'seg-' + ${verdict}"></span>
+                <span class="small fw-semibold" th:text="${verdict.label}">Verdict</span>
+            </span>
+            <div class="progress flex-grow-1" style="height: 8px">
+                <div class="progress-bar" th:classappend="'seg-' + ${verdict}"
+                     th:style="'width:' + ${consensus.percentagesByVerdict.get(verdict)} + '%'"
+                     th:attr="aria-valuenow=${consensus.percentagesByVerdict.get(verdict)}"></div>
+            </div>
+            <span class="small fw-bold text-start" style="min-width: 88px"
+                  th:text="${#numbers.formatDecimal(consensus.percentagesByVerdict.get(verdict), 1, 0)} + '% (' + ${consensus.countsByVerdict.get(verdict)} + ')'">0% (0)</span>
+        </div>
+
+        <hr class="my-3">
+        <div class="d-flex justify-content-between small mb-1">
+            <span class="text-muted">רמת קונצנזוס כללית</span>
+            <span class="fw-bold text-navy" th:text="${leadingPercent} + '%'">0%</span>
+        </div>
+        <div class="progress" style="height: 6px">
+            <div class="progress-bar bg-navy" th:style="'width:' + ${leadingPercent} + '%'"
+                 th:attr="aria-valuenow=${leadingPercent}"></div>
+        </div>
+        <p class="small text-muted mb-0 mt-2" th:if="${leadingVerdict != null}">
+            ההכרעה המובילה: <span class="fw-semibold" th:text="${leadingVerdict.label}">Verdict</span>
+        </p>
+    </div>
+</section>
+
+<div th:fragment="speakerBadge(speaker, fallbackName)" class="d-flex align-items-center gap-2">
+    <!-- Round avatar: real image when present, person-icon fallback otherwise -->
+    <img th:if="${speaker != null and speaker.imageUrl != null and !#strings.isEmpty(speaker.imageUrl)}"
+         th:src="${speaker.imageUrl}" alt="" loading="lazy"
+         class="rounded-circle flex-shrink-0"
+         style="width:48px;height:48px;object-fit:cover">
+    <span th:unless="${speaker != null and speaker.imageUrl != null and !#strings.isEmpty(speaker.imageUrl)}"
+          class="rounded-circle bg-navy-wash text-navy d-flex align-items-center justify-content-center flex-shrink-0"
+          style="width:48px;height:48px">
+        <i class="bi bi-person-fill fs-5"></i>
+    </span>
+
+    <!-- Name on top, role underneath -->
+    <span class="d-flex flex-column">
+        <!-- Name links to the external profile when present. position-relative + z-2 keep it
+             above any stretched-link card overlay, so it is an independent (never nested) link. -->
+        <a th:if="${speaker != null and speaker.profileUrl != null and !#strings.isEmpty(speaker.profileUrl)}"
+           th:href="${speaker.profileUrl}" target="_blank" rel="noopener noreferrer nofollow"
+           class="fw-bold text-break text-decoration-none text-navy position-relative z-2"
+           th:text="${speaker.name}">Speaker</a>
+        <span th:unless="${speaker != null and speaker.profileUrl != null and !#strings.isEmpty(speaker.profileUrl)}"
+              class="fw-bold text-break"
+              th:text="${speaker != null ? speaker.name : fallbackName}">Speaker</span>
+        <span th:if="${speaker != null and speaker.role != null and !#strings.isEmpty(speaker.role)}"
+              class="small text-muted text-break"
+              th:text="${speaker.role}">Role</span>
+    </span>
+</div>
+
+<!--
+    Editor final-decision form. One markup source for every task: values are prefilled from the
+    per-statement draft (which, for the task that just failed validation, IS the resubmitted form),
+    and inline errors are shown only for that failed task via the passed errors map. Save Draft /
+    Publish behavior is driven by the shared `.decision-draft-form` JS; CSRF is auto-injected by th:action.
+-->
+<div th:fragment="decisionForm(item, draft, verdicts, editorTopics, failedId, errors)"
+     th:with="showErrors=${failedId != null and failedId == item.id}">
+    <form th:action="@{/editor/{id}/decision(id=${item.id})}" method="post"
+          class="decision-draft-form needs-validation" novalidate
+          th:attr="data-statement-id=${item.id},data-draft-url=@{/editor/{id}/decision/draft(id=${item.id})}">
+        <label class="form-label fw-bold small">פסיקה סופית</label>
+        <div class="d-flex flex-wrap gap-3 mb-3">
+            <label class="form-check-label d-inline-flex align-items-center gap-2" th:each="verdict : ${verdicts}">
+                <input class="form-check-input mt-0" type="radio" name="finalVerdict" th:value="${verdict}"
+                       th:checked="${draft.finalVerdict == verdict}">
+                <span class="tier" th:classappend="'tier-' + ${verdict}" th:text="${verdict.label}">verdict</span>
+            </label>
+        </div>
+        <div class="invalid-feedback d-block mb-3"
+             th:if="${showErrors and errors != null and errors.containsKey('finalVerdict')}"
+             th:text="${errors.get('finalVerdict')}"></div>
+
+        <!-- Topic classification: required, assigned by the editor at decision time -->
+        <fieldset class="mb-3">
+            <legend class="form-label fw-bold small mb-1">סיווג נושאים (חובה)</legend>
+            <p class="small text-muted mb-2">בחרו לפחות נושא אחד לפני פרסום ההכרעה.</p>
+            <div class="d-flex flex-wrap gap-2">
+                <div class="form-check border rounded-3 px-4 py-2" th:each="topic : ${editorTopics}">
+                    <input class="form-check-input" type="checkbox" name="topicIds" th:value="${topic.id}"
+                           th:checked="${draft.topicIds != null and draft.topicIds.contains(topic.id)}"
+                           th:id="'decision-topic-' + ${item.id} + '-' + ${topic.id}">
+                    <label class="form-check-label" th:for="'decision-topic-' + ${item.id} + '-' + ${topic.id}"
+                           th:text="${topic.name}">topic</label>
+                </div>
+            </div>
+            <div class="invalid-feedback d-block mt-1"
+                 th:if="${showErrors and errors != null and errors.containsKey('topicIds')}"
+                 th:text="${errors.get('topicIds')}"></div>
+        </fieldset>
+
+        <div class="mb-3">
+            <label class="form-label fw-bold small">הערות / נימוק (לא חובה)</label>
+            <textarea class="form-control" rows="5" name="notes"
+                      th:text="${draft.notes}" placeholder="הסבר ההכרעה, מקורות שנבדקו..."></textarea>
+        </div>
+        <div class="mb-3">
+            <label class="form-label fw-bold small" th:for="'finalEvidenceUrl-' + ${item.id}">קישור לראיה סופית (אופציונלי)</label>
+            <input th:id="'finalEvidenceUrl-' + ${item.id}" type="url" class="form-control" name="finalEvidenceUrl"
+                   th:value="${draft.finalEvidenceUrl}"
+                   th:classappend="${showErrors and errors != null and errors.containsKey('finalEvidenceUrl')} ? 'is-invalid'"
+                   placeholder="https://...">
+            <div class="invalid-feedback d-block"
+                 th:if="${showErrors and errors != null and errors.containsKey('finalEvidenceUrl')}"
+                 th:text="${errors.get('finalEvidenceUrl')}"></div>
+            <div class="invalid-feedback"
+                 th:unless="${showErrors and errors != null and errors.containsKey('finalEvidenceUrl')}">יש להזין כתובת URL תקינה.</div>
+        </div>
+        <button type="submit" class="btn btn-navy fw-bold w-100">
+            <i class="bi bi-megaphone"></i> פרסם הכרעה
+        </button>
+        <span class="decision-draft-status small text-muted d-block mt-2" aria-live="polite"></span>
+    </form>
+</div>
+</body>
+</html>

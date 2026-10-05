@@ -1,0 +1,533 @@
+﻿<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
+      lang="he" dir="rtl">
+<head th:replace="~{fragments/layout :: head('TRUE · זירת האימות')}"></head>
+<body class="bg-light">
+
+<nav th:replace="~{fragments/layout :: navbar('')}"></nav>
+
+<main class="container py-4 py-lg-5">
+
+    <!-- Back navigation: right-pointing arrow for RTL -->
+    <a th:href="@{/feed}" class="btn btn-outline-secondary mb-3">
+        <i class="bi bi-arrow-right"></i> חזור לזירה המרכזית
+    </a>
+
+    <!-- flash messages -->
+    <div th:if="${voteSuccess}" class="alert alert-success alert-dismissible fade show" role="alert">
+        <span th:text="${voteSuccess}">הפעולה הושלמה בהצלחה</span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="סגירה"></button>
+    </div>
+    <div th:if="${voteError}" class="alert alert-danger alert-dismissible fade show" role="alert">
+        <span th:text="${voteError}">אירעה שגיאה</span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="סגירה"></button>
+    </div>
+    <div th:if="${commentSuccess}" class="alert alert-success alert-dismissible fade show" role="alert">
+        <span th:text="${commentSuccess}">הפעולה הושלמה בהצלחה</span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="סגירה"></button>
+    </div>
+    <div th:if="${commentError}" class="alert alert-danger alert-dismissible fade show" role="alert">
+        <span th:text="${commentError}">אירעה שגיאה</span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="סגירה"></button>
+    </div>
+
+    <div class="row g-4 align-items-start">
+
+        <!-- MAIN COLUMN -->
+        <section class="col-lg-8 d-flex flex-column gap-4">
+
+            <!-- HERO -->
+            <div class="card border-0 shadow-sm rounded-4 position-relative overflow-hidden">
+                <span class="hero-accent"></span>
+                <div class="card-body p-4 p-lg-5 position-relative">
+                    <!-- breadcrumb + topics -->
+                    <div class="d-flex align-items-center flex-wrap gap-2 small text-muted mb-4">
+                        <a th:href="@{/feed}" class="text-decoration-none text-navy fw-semibold">פיד גילוי</a>
+                        <i class="bi bi-chevron-left"></i>
+                        <span class="d-flex flex-wrap gap-1">
+                            <span th:each="topic : ${statement.topics}" class="badge text-bg-light border" th:text="${topic.name}">topic</span>
+                            <span th:if="${#lists.isEmpty(statement.topics)}" class="badge text-bg-light border text-muted">טרם סווג</span>
+                        </span>
+                    </div>
+
+                    <!-- statement quote -->
+                    <h1 class="display-6 fw-bold lh-base mb-4" th:text="${statement.text}">Statement</h1>
+
+                    <!-- speaker + meta -->
+                    <div class="d-flex flex-wrap align-items-center gap-3 pt-4 border-top">
+                        <div th:replace="~{fragments/components :: speakerBadge(speaker=${statement.speaker}, fallbackName=${statement.speakerName})}"></div>
+                        <div class="ms-auto d-flex flex-wrap align-items-center gap-3 small text-muted">
+                            <a th:if="${statement.sourceUrl != null}" th:href="${statement.sourceUrl}" target="_blank" rel="noopener"
+                               class="d-inline-flex align-items-center gap-1 text-decoration-none text-navy bg-navy-wash border rounded-pill px-3 py-1 text-break"
+                               style="max-width:100%">
+                                <i class="bi bi-link-45deg flex-shrink-0"></i>
+                                <span class="text-break" th:text="${statement.sourceUrl}">source</span>
+                            </a>
+                            <span class="d-inline-flex align-items-center gap-1">
+                                <i class="bi bi-calendar3"></i>
+                                <span th:text="${#temporals.format(statement.createdAt, 'dd/MM/yyyy')}">date</span>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VOTE -->
+            <div class="card border-0 shadow-sm rounded-4">
+                <div class="card-body p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h2 class="h5 fw-bold mb-0">מה הסיווג הנכון לאמירה?</h2>
+                        <span th:if="${alreadyVoted and statement.status.name() == 'PENDING'}" class="badge rounded-pill text-bg-light border">הצבעתם</span>
+                        <span sec:authorize="isAnonymous()" th:if="${!alreadyVoted and statement.status.name() == 'PENDING'}" class="badge rounded-pill text-bg-light border">טרם הצבעת</span>
+                    </div>
+
+                    <!-- under editor review (intermediate state, not yet decided) -->
+                    <div th:if="${statement.claimedBy != null and statement.status.name() != 'DECIDED'}" class="mb-3">
+                        <span class="badge bg-warning text-dark">ננעל להצבעה - בבדיקת עורך</span>
+                    </div>
+
+                    <!-- final decision panel: shown once the editor published a verdict (null-safe) -->
+                    <div th:if="${statement.status.name() == 'DECIDED' and editorDecision != null}"
+                         class="border rounded-4 bg-light p-3 p-lg-4 mb-0">
+                        <h3 class="h6 fw-bold text-muted text-uppercase mb-3" style="letter-spacing:.05em">
+                            <i class="bi bi-patch-check-fill text-navy"></i> ההכרעה הסופית של העורך
+                        </h3>
+                        <div class="mb-3">
+                            <span class="tier" th:classappend="'tier-' + ${editorDecision.finalVerdict}"
+                                  th:text="${editorDecision.finalVerdict.label}">Verdict</span>
+                        </div>
+                        <!-- editor notes: rendered only when present -->
+                        <p class="mb-3 text-break"
+                           th:if="${editorDecision.notes != null and !#strings.isEmpty(editorDecision.notes)}"
+                           th:text="${editorDecision.notes}">notes</p>
+                        <!-- final evidence link: rendered only when present, opens in a new tab -->
+                        <a th:if="${statement.finalEvidenceUrl != null and !#strings.isEmpty(statement.finalEvidenceUrl)}"
+                           th:href="${statement.finalEvidenceUrl}" target="_blank" rel="noopener"
+                           class="d-block text-decoration-none text-break mb-3">
+                            <i class="bi bi-link-45deg"></i>
+                            <span th:text="${statement.finalEvidenceUrl}">evidence</span>
+                        </a>
+                        <div class="d-flex flex-wrap align-items-center gap-3 small text-muted">
+                            <!-- fixed system label; never the real editor identity -->
+                            <span><i class="bi bi-person-badge"></i> מערכת True</span>
+                            <span><i class="bi bi-calendar3"></i>
+                                <span th:text="${#temporals.format(editorDecision.decidedAt, 'dd/MM/yyyy')}">date</span>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- already voted (open statement) -->
+                    <div th:if="${alreadyVoted and statement.status.name() != 'DECIDED'}" class="alert alert-info mb-0">
+                        <i class="bi bi-check-circle"></i> כבר הצבעתם על אמירה זו. תודה!
+                    </div>
+
+                    <!-- login prompt for anonymous visitors on an open statement -->
+                    <div sec:authorize="isAnonymous()" th:if="${!alreadyVoted and statement.status.name() == 'PENDING'}" class="alert alert-secondary mb-0">
+                        כדי להצביע יש <a th:href="@{/login}" class="alert-link">להתחבר</a>.
+                    </div>
+
+                    <!-- vote form: only rendered when voting is still open and user has not voted -->
+                    <form sec:authorize="isAuthenticated()" th:if="${!alreadyVoted and statement.status.name() == 'PENDING'}"
+                          th:action="@{/arena/{id}/vote(id=${statement.id})}" th:object="${voteForm}" method="post"
+                          id="voteForm" class="needs-validation" novalidate
+                          th:attr="data-draft-url=@{/arena/{id}/vote/draft(id=${statement.id})}">
+
+                        <!-- suggested topic (required) - crowdsourced classification -->
+                        <div class="mb-4">
+                            <label class="form-label fw-bold small" for="suggestedTopicId">הצע סיווג לנושא (חובה)</label>
+                            <select id="suggestedTopicId" class="form-select" th:field="*{suggestedTopicId}" required
+                                    th:classappend="${#fields.hasErrors('suggestedTopicId')} ? 'is-invalid'">
+                                <option value="">בחרו נושא…</option>
+                                <option th:each="topic : ${voteTopics}" th:value="${topic.id}" th:text="${topic.name}">topic</option>
+                            </select>
+                            <div class="invalid-feedback"
+                                 th:if="${#fields.hasErrors('suggestedTopicId')}" th:errors="*{suggestedTopicId}"></div>
+                            <div class="invalid-feedback" th:unless="${#fields.hasErrors('suggestedTopicId')}">בחרו נושא.</div>
+                        </div>
+
+                        <!-- verdict cards -->
+                        <label class="form-label fw-bold small">סיווג</label>
+                        <div class="row row-cols-2 row-cols-lg-5 g-3 mb-2">
+                            <div class="col" th:each="v : ${verdicts}">
+                                <label class="verdict-card card border-2 h-100 m-0 text-center align-items-center p-3" style="cursor:pointer">
+                                    <input class="form-check-input visually-hidden" type="radio" th:field="*{verdict}" th:value="${v}">
+                                    <span class="verdict-dot mb-2" th:classappend="'seg-' + ${v}"></span>
+                                    <span class="fw-bold" th:text="${v.label}">verdict</span>
+                                    <!-- vote counts hidden from non-voters to avoid bias -->
+                                    <span th:if="${canViewStats and consensus != null}" class="text-muted small mt-1"
+                                          th:text="${consensus.countsByVerdict.get(v)}">0</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="invalid-feedback d-block mb-3"
+                             th:if="${#fields.hasErrors('verdict')}" th:errors="*{verdict}"></div>
+
+                        <!-- optional comment -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small" for="commentText">מה דעתך? (לא חובה)</label>
+                            <textarea id="commentText" class="form-control" rows="3" th:field="*{commentText}"
+                                      placeholder="שתפו את דעתכם — אם תכתבו, זה יתפרסם כתגובה ציבורית."></textarea>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small" for="evidenceUrl">הוסף קישור לראיה (אופציונלי)</label>
+                            <input id="evidenceUrl" type="url" class="form-control" th:field="*{evidenceUrl}"
+                                   th:classappend="${#fields.hasErrors('evidenceUrl')} ? 'is-invalid'"
+                                   placeholder="https://...">
+                            <div class="invalid-feedback"
+                                 th:if="${#fields.hasErrors('evidenceUrl')}" th:errors="*{evidenceUrl}"></div>
+                        </div>
+
+                        <div class="d-flex flex-wrap align-items-center gap-2">
+                            <button type="submit" class="btn btn-navy fw-bold px-4">שלח הצבעה</button>
+                            <span id="voteDraftStatus" class="small text-muted" aria-live="polite"></span>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Anti-bias placeholder: shown when the viewer may not see community stats -->
+            <div th:unless="${canViewStats}" class="card border-0 shadow-sm rounded-4">
+                <div class="card-body p-5 text-center text-muted">
+                    <i class="bi bi-eye-slash fs-1 d-block mb-2"></i>
+                    <h2 class="h6 fw-bold">הצבע כדי לראות את תוצאות הקהילה</h2>
+                    <p class="small mb-0">תוצאות הקונצנזוס מוסתרות עד שתצביעו, כדי למנוע הטיה.</p>
+                </div>
+            </div>
+
+            <div class="mb-4" th:if="${canViewStats}">
+                <div th:replace="~{fragments/components :: consensusVisualization(
+                        consensus=${consensus},
+                        leadingVerdict=${leadingVerdict},
+                        leadingPercent=${leadingPercent},
+                        verdicts=${verdicts}
+                )}"></div>
+            </div>
+
+            <!-- DISCUSSION / EVIDENCE -->
+            <div class="card border-0 shadow-sm rounded-4">
+                <div class="card-body p-4">
+                    <h2 class="h5 fw-bold mb-4 pb-3 border-bottom">דיון וראיות</h2>
+
+                    <div th:unless="${canViewDiscussion}" class="alert alert-secondary mb-0">
+                        <span sec:authorize="isAnonymous()">יש להתחבר ולהצביע על אמירה זו כדי לצפות בדיון או להשתתף בו.</span>
+                        <span sec:authorize="isAuthenticated()">הצביעו על אמירה זו כדי לצפות בדיון או להשתתף בו.</span>
+                    </div>
+
+                    <form sec:authorize="isAuthenticated()" th:if="${canViewDiscussion and statement.status.name() != 'DECIDED'}"
+                          th:action="@{/arena/{id}/comment(id=${statement.id})}" th:object="${commentForm}" method="post" class="mb-4">
+                        <div class="mb-2">
+                            <textarea class="form-control" rows="2" th:field="*{content}" placeholder="הוסיפו תגובה…"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-outline-secondary btn-sm">פרסם תגובה</button>
+                    </form>
+                    <div sec:authorize="isAuthenticated()" th:if="${canViewDiscussion and statement.status.name() == 'DECIDED'}" class="alert alert-secondary mb-4">
+                        הדיון ננעל לאחר פרסום ההכרעה הסופית.
+                    </div>
+                    <div sec:authorize="isAnonymous()" th:if="${canViewDiscussion}" class="alert alert-secondary">
+                        כדי להגיב יש <a th:href="@{/login}" class="alert-link">להתחבר</a>.
+                    </div>
+
+                    <!-- Discussion list: server-rendered fragment, swapped in place on SSE events -->
+                    <div th:fragment="commentsList" id="discussionList" th:if="${canViewDiscussion}"
+                         th:attr="data-comment-sort=${commentSort}">
+
+                        <!-- sort control: newest vs. top-rated vs. lowest-rated; wraps on narrow screens -->
+                        <div class="d-flex flex-wrap justify-content-end mb-3">
+                            <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="מיון תגובות">
+                                <a th:href="@{/arena/{id}(id=${statement.id},commentSort='new')}"
+                                   class="btn" th:classappend="${commentSort == 'new'} ? 'btn-navy' : 'btn-outline-secondary'">החדשים ביותר</a>
+                                <a th:href="@{/arena/{id}(id=${statement.id},commentSort='top')}"
+                                   class="btn" th:classappend="${commentSort == 'top'} ? 'btn-navy' : 'btn-outline-secondary'">המדורגים ביותר</a>
+                                <a th:href="@{/arena/{id}(id=${statement.id},commentSort='low')}"
+                                   class="btn" th:classappend="${commentSort == 'low'} ? 'btn-navy' : 'btn-outline-secondary'">הנמוכים ביותר</a>
+                            </div>
+                        </div>
+
+                        <div th:if="${#lists.isEmpty(comments)}" class="text-muted small">אין תגובות עדיין.</div>
+
+                        <div th:unless="${#lists.isEmpty(comments)}" class="d-flex flex-column gap-2">
+                        <div class="evidence-row d-flex gap-3 p-3 rounded-3 border border-transparent" th:each="c : ${comments}">
+
+                            <!-- vote column (Reddit-style) -->
+                            <div class="d-flex flex-column align-items-center" style="min-width:44px">
+                                <!-- authenticated: clickable arrows -->
+                                <th:block sec:authorize="isAuthenticated()" th:if="${statement.status.name() != 'DECIDED'}">
+                                    <form th:action="@{/arena/comments/{cid}/vote(cid=${c.commentId})}" method="post" class="m-0 lh-1">
+                                        <input type="hidden" name="type" value="UPVOTE">
+                                        <button type="submit" class="btn btn-link p-0 border-0 text-decoration-none"
+                                                th:classappend="${c.myVote != null and c.myVote.name() == 'UPVOTE'} ? 'text-success' : 'text-muted'"
+                                                title="הצבעה בעד">
+                                            <i class="bi" style="font-size:1.3rem"
+                                               th:classappend="${c.myVote != null and c.myVote.name() == 'UPVOTE'} ? 'bi-arrow-up-circle-fill' : 'bi-arrow-up-circle'"></i>
+                                        </button>
+                                    </form>
+                                    <span class="fw-bold small my-1" th:text="${c.netScore}">0</span>
+                                    <form th:action="@{/arena/comments/{cid}/vote(cid=${c.commentId})}" method="post" class="m-0 lh-1">
+                                        <input type="hidden" name="type" value="DOWNVOTE">
+                                        <button type="submit" class="btn btn-link p-0 border-0 text-decoration-none"
+                                                th:classappend="${c.myVote != null and c.myVote.name() == 'DOWNVOTE'} ? 'text-danger' : 'text-muted'"
+                                                title="הצבעה נגד">
+                                            <i class="bi" style="font-size:1.3rem"
+                                               th:classappend="${c.myVote != null and c.myVote.name() == 'DOWNVOTE'} ? 'bi-arrow-down-circle-fill' : 'bi-arrow-down-circle'"></i>
+                                        </button>
+                                    </form>
+                                </th:block>
+                                <th:block sec:authorize="isAuthenticated()" th:if="${statement.status.name() == 'DECIDED'}">
+                                    <i class="bi bi-arrow-up-circle text-muted" style="font-size:1.3rem"></i>
+                                    <span class="fw-bold small my-1" th:text="${c.netScore}">0</span>
+                                    <i class="bi bi-arrow-down-circle text-muted" style="font-size:1.3rem"></i>
+                                </th:block>
+                                <!-- anonymous: static (read-only) -->
+                                <th:block sec:authorize="isAnonymous()">
+                                    <i class="bi bi-arrow-up-circle text-muted" style="font-size:1.3rem"></i>
+                                    <span class="fw-bold small my-1" th:text="${c.netScore}">0</span>
+                                    <i class="bi bi-arrow-down-circle text-muted" style="font-size:1.3rem"></i>
+                                </th:block>
+                            </div>
+
+                            <!-- comment body -->
+                            <div class="flex-grow-1">
+                                <div class="d-flex align-items-center gap-2 mb-1">
+                                    <span class="rounded-circle bg-navy text-white d-flex align-items-center justify-content-center fw-bold"
+                                          style="width:28px;height:28px;font-size:.7rem"
+                                          th:text="${c.author != null and c.author.length() > 2 ? c.author.substring(0, 2) : c.author}">AB</span>
+                                    <span class="fw-bold" th:text="${c.author}">author</span>
+                                    <span class="ms-auto small text-muted" th:text="${#temporals.format(c.createdAt, 'dd/MM/yyyy HH:mm')}">date</span>
+                                </div>
+                                <p class="mb-0" th:text="${c.content}">comment</p>
+                                <a th:if="${c.evidenceUrl != null and !#strings.isEmpty(c.evidenceUrl)}"
+                                   th:href="${c.evidenceUrl}" target="_blank" rel="noopener"
+                                   class="badge text-bg-light border text-decoration-none mt-2">
+                                    <i class="bi bi-paperclip"></i> ראיה מצורפת
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- RIGHT RAIL -->
+        <!-- min-w-0 lets this flex column shrink so recently-viewed links can truncate -->
+        <aside class="col-lg-4 d-flex flex-column gap-4 min-w-0">
+
+            <!-- status -->
+            <div class="card border-0 shadow-sm rounded-4">
+                <div class="card-body p-4">
+                    <h3 class="text-uppercase small fw-bold text-muted mb-3" style="letter-spacing:.05em">מצב נוכחי</h3>
+
+                    <!-- DECIDED: editor has published a final verdict -->
+                    <div th:if="${statement.status.name() == 'DECIDED'}"
+                         class="d-flex align-items-center gap-2 rounded-3 p-3 fw-bold"
+                         style="background:#e6f4ea;color:#1e7e34;border:1px solid #b7dfc2">
+                        <i class="bi bi-patch-check-fill"></i>
+                        <span>הוכרע סופית על ידי עורך</span>
+                    </div>
+
+                    <!-- Claimed/under review: an editor is reviewing it -->
+                    <div th:if="${statement.status.name() != 'DECIDED' and statement.claimedBy != null}"
+                         class="d-flex align-items-center gap-2 rounded-3 p-3 fw-bold"
+                         style="background:#fdecea;color:#b02a37;border:1px solid #f5c2c7">
+                        <i class="bi bi-person-check-fill"></i>
+                        <span>בבדיקת עורך
+                            <span th:if="${statement.claimedBy.username != null}" class="fw-normal small"
+                                  th:text="'(' + ${statement.claimedBy.username} + ')'">(editor)</span>
+                        </span>
+                    </div>
+
+                    <!-- Pending: awaiting community verification -->
+                    <div th:if="${statement.status.name() != 'DECIDED' and statement.claimedBy == null}"
+                         class="d-flex align-items-center gap-2 rounded-3 p-3 fw-bold"
+                         style="background:#fff7e6;color:#9a6700;border:1px solid #f3e0b5">
+                        <i class="bi bi-hourglass-split"></i>
+                        <span>ממתין לאימות הקהילה</span>
+                    </div>
+
+                    <p class="small text-muted mt-3 mb-0">האמירה תאומת רשמית כשהקונצנזוס הקהילתי יתייצב ועורך יאשר את ההחלטה.</p>
+                </div>
+            </div>
+
+            <!-- sources / additional info -->
+            <div class="card border-0 shadow-sm rounded-4">
+                <div class="card-body p-4">
+                    <h3 class="text-uppercase small fw-bold text-muted mb-3" style="letter-spacing:.05em">מקורות ומידע נוסף</h3>
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <i class="bi bi-megaphone text-navy"></i>
+                        <span class="small text-muted">נאמר על ידי:</span>
+                        <span th:replace="~{fragments/components :: speakerBadge(speaker=${statement.speaker}, fallbackName=${statement.speakerName})}"></span>
+                    </div>
+                    <a th:if="${statement.sourceUrl != null and !#strings.isEmpty(statement.sourceUrl)}"
+                       th:href="${statement.sourceUrl}" target="_blank" rel="noopener"
+                       class="d-inline-flex align-items-center gap-1 text-decoration-none text-navy bg-navy-wash border rounded-pill px-3 py-1 text-break">
+                        <i class="bi bi-link-45deg"></i>
+                        <span th:text="${statement.sourceUrl}">source link</span>
+                    </a>
+                    <div th:if="${statement.sourceUrl == null or #strings.isEmpty(statement.sourceUrl)}" class="text-muted small">
+                        לא צורף קישור למקור.
+                    </div>
+                </div>
+            </div>
+
+            <!-- related claims -->
+            <div class="card border-0 shadow-sm rounded-4">
+                <div class="card-body p-4">
+                    <h3 class="text-uppercase small fw-bold text-muted mb-3" style="letter-spacing:.05em">אמירות קשורות</h3>
+                    <div th:if="${#lists.isEmpty(related)}" class="text-muted small">אין כרגע.</div>
+                    <a th:each="r : ${related}" th:href="@{/arena/{id}(id=${r.id})}"
+                       class="d-block py-2 border-bottom text-decoration-none text-dark text-break">
+                        <span th:text="${r.text}">related statement</span>
+                    </a>
+                </div>
+            </div>
+
+            <!-- recently viewed (session-scoped) -->
+            <div class="card border-0 shadow-sm rounded-4">
+                <div class="card-body p-4">
+                    <h3 class="text-uppercase small fw-bold text-muted mb-3" style="letter-spacing:.05em">נצפו לאחרונה (בסשן זה)</h3>
+                    <div th:if="${#lists.isEmpty(recentlyViewed)}" class="text-muted small">—</div>
+                    <a th:each="rv : ${recentlyViewed}" th:href="@{/arena/{id}(id=${rv.id})}"
+                       class="d-block py-1 text-decoration-none text-dark small text-truncate"
+                       th:title="${rv.text}" th:text="${rv.text}">item</a>
+                </div>
+            </div>
+        </aside>
+    </div>
+</main>
+
+<footer th:replace="~{fragments/layout :: footer}"></footer>
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const form = document.getElementById('voteForm');
+    if (!form || !window.fetch) {
+        return;
+    }
+
+    const status = document.getElementById('voteDraftStatus');
+    const draftUrl = form.getAttribute('data-draft-url');
+    let debounceId = null;
+    let ready = false;
+    let submitting = false;
+    let activeSave = Promise.resolve();
+
+    function setStatus(message) {
+        if (status) {
+            status.textContent = message;
+        }
+    }
+
+    function saveDraft() {
+        const formData = new FormData(form);
+        const csrfInput = form.querySelector('input[name="_csrf"]');
+        if (csrfInput) {
+            formData.set(csrfInput.name, csrfInput.value);
+        }
+
+        setStatus('שומר...');
+        activeSave = fetch(draftUrl, {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin',
+            headers: {'X-Requested-With': 'fetch'}
+        }).then(function (response) {
+            if (!response.ok) {
+                throw new Error('draft save failed');
+            }
+            setStatus('נשמר');
+        }).catch(function () {
+            setStatus('השמירה נכשלה');
+        });
+        return activeSave;
+    }
+
+    function scheduleSave() {
+        if (!ready || submitting) {
+            return;
+        }
+        window.clearTimeout(debounceId);
+        debounceId = window.setTimeout(saveDraft, 700);
+    }
+
+    form.querySelectorAll('input, select, textarea').forEach(function (field) {
+        field.addEventListener('input', scheduleSave);
+        field.addEventListener('change', scheduleSave);
+    });
+
+    form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        if (!form.checkValidity()) {
+            form.classList.add('was-validated');
+            return;
+        }
+        if (submitting) {
+            return;
+        }
+        submitting = true;
+        const submitButton = event.submitter || form.querySelector('button[type="submit"]');
+        if (submitButton) {
+            submitButton.disabled = true;
+        }
+        window.clearTimeout(debounceId);
+        activeSave.finally(function () {
+            form.submit();
+        });
+    });
+
+    window.setTimeout(function () {
+        ready = true;
+    }, 0);
+});
+</script>
+<script th:if="${canViewDiscussion}" th:inline="javascript">
+document.addEventListener('DOMContentLoaded', function () {
+    if (!window.EventSource) {
+        return;
+    }
+    const source = new EventSource(/*[[@{/arena/{id}/events(id=${statement.id})}]]*/ '');
+    const fragmentUrl = /*[[@{/arena/{id}/comments-fragment(id=${statement.id})}]]*/ '';
+
+    // SSE-driven refresh: fetch the server-rendered discussion fragment and swap it
+    // in place (keeps scroll position and any half-typed comment). The current sort
+    // is read from the container's data attribute so the chosen order is preserved.
+    function refreshDiscussion() {
+        const current = document.getElementById('discussionList');
+        const sort = current ? current.getAttribute('data-comment-sort') : null;
+        const url = fragmentUrl + (sort ? ('?commentSort=' + encodeURIComponent(sort)) : '');
+        fetch(url, {headers: {'X-Requested-With': 'fetch'}})
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error('discussion fragment request failed');
+                }
+                return response.text();
+            })
+            .then(function (html) {
+                const container = document.getElementById('discussionList');
+                if (container) {
+                    container.outerHTML = html;
+                } else {
+                    window.location.reload();
+                }
+            })
+            .catch(function () {
+                window.location.reload();
+            });
+    }
+
+    source.addEventListener('COMMENT_ADDED', refreshDiscussion);
+    source.addEventListener('COMMENT_VOTE_UPDATED', refreshDiscussion);
+    source.addEventListener('VOTE_SUBMITTED', function () {
+        window.location.reload();
+    });
+    function closeSource() {
+        source.close();
+    }
+    window.addEventListener('pagehide', closeSource);
+    window.addEventListener('beforeunload', closeSource);
+});
+</script>
+</body>
+</html>

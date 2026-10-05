@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
+      lang="he" dir="rtl">
+<head th:replace="~{fragments/layout :: head('TRUE · לוח המובילים')}"></head>
+<body class="bg-light">
+
+<nav th:replace="~{fragments/layout :: navbar('leaderboard')}"></nav>
+
+<main class="container py-4">
+
+    <div class="mb-4">
+        <h1 class="fw-bold">לוח המובילים</h1>
+        <p class="text-muted mb-0">עשרת התורמים בעלי ציון האמון הגבוה ביותר בקהילה.</p>
+    </div>
+
+    <!-- Ranking tabs -->
+    <ul class="nav nav-pills mb-3" id="leaderboardTabs">
+        <li class="nav-item">
+            <button type="button" class="nav-link active" data-sort="trust">לפי ציון אמון</button>
+        </li>
+        <li class="nav-item">
+            <button type="button" class="nav-link" data-sort="votes">לפי תרומות</button>
+        </li>
+        <li class="nav-item">
+            <button type="button" class="nav-link" data-sort="accuracy">לפי דיוק</button>
+        </li>
+    </ul>
+
+    <!-- Search + scope toggle -->
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <div class="input-group input-group-sm" style="max-width:280px">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="text" id="leaderboardSearch" class="form-control" placeholder="חיפוש לפי שם משתמש" autocomplete="off">
+        </div>
+        <button type="button" id="leaderboardScopeToggle" class="btn btn-outline-secondary btn-sm">הצג את כולם</button>
+        <span id="leaderboardCount" class="text-muted small ms-auto"></span>
+    </div>
+
+    <!-- SPA states -->
+    <div id="leaderboardStatus" class="card border-0 shadow-sm">
+        <div class="card-body text-center text-muted py-5">
+            <div class="spinner-border text-secondary" role="status"></div>
+            <div class="mt-2">טוען את לוח המובילים…</div>
+        </div>
+    </div>
+
+    <!-- Filled by the SPA -->
+    <div id="leaderboardContent" class="d-none"></div>
+
+</main>
+
+<footer th:replace="~{fragments/layout :: footer}"></footer>
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+
+<!-- Leaderboard SPA: rendered entirely client-side from /api/users/leaderboard -->
+<script th:inline="javascript">
+document.addEventListener('DOMContentLoaded', function () {
+    if (window.trueCommunityLeaderboardInitialized) {
+        return;
+    }
+    window.trueCommunityLeaderboardInitialized = true;
+
+    const apiUrl = /*[[@{/api/users/leaderboard}]]*/ '/api/users/leaderboard';
+    const eventsUrl = /*[[@{/leaderboard/events}]]*/ '/leaderboard/events';
+
+    const tabs = Array.from(document.querySelectorAll('#leaderboardTabs [data-sort]'));
+    const searchInput = document.getElementById('leaderboardSearch');
+    const scopeToggle = document.getElementById('leaderboardScopeToggle');
+    const statusBox = document.getElementById('leaderboardStatus');
+    const content = document.getElementById('leaderboardContent');
+    const countLabel = document.getElementById('leaderboardCount');
+
+    const state = {sort: 'trust', scope: 'top', data: null};
+
+    function setStatus(html) {
+        statusBox.innerHTML = html;
+        statusBox.classList.remove('d-none');
+        content.classList.add('d-none');
+    }
+
+    function showLoading() {
+        setStatus('<div class="card-body text-center text-muted py-5">' +
+            '<div class="spinner-border text-secondary" role="status"></div>' +
+            '<div class="mt-2">טוען את לוח המובילים…</div></div>');
+    }
+
+    function showError() {
+        setStatus('<div class="card-body text-center text-danger py-5">' +
+            '<i class="bi bi-exclamation-triangle fs-3 d-block mb-2"></i>' +
+            '<div>אירעה שגיאה בטעינת לוח המובילים.</div></div>');
+    }
+
+
+    function medal(rank) {
+        if (rank === 1) { return '<i class="bi bi-trophy-fill text-warning"></i> '; }
+        if (rank === 2) { return '<i class="bi bi-trophy-fill text-secondary"></i> '; }
+        if (rank === 3) { return '<i class="bi bi-trophy-fill text-warning-emphasis"></i> '; }
+        return '';
+    }
+
+    function trust(value) {
+        return Number(value || 0).toFixed(2);
+    }
+
+    // Build one <tr>. Username goes in via textContent to stay XSS-safe.
+    function buildRow(entry, active, isMeRow) {
+        const tr = document.createElement('tr');
+        if (entry.currentUser || isMeRow) {
+            tr.className = 'table-primary fw-bold';
+        }
+
+        const rankTd = document.createElement('td');
+        rankTd.className = 'text-center text-nowrap';
+        rankTd.innerHTML = '<span class="badge rounded-pill text-bg-light border">#' + entry.rank + '</span> ' + medal(entry.rank);
+        tr.appendChild(rankTd);
+
+        const userTd = document.createElement('td');
+        userTd.className = 'min-w-0';
+        const userWrap = document.createElement('div');
+        userWrap.className = 'd-flex align-items-center gap-1 min-w-0';
+        userTd.appendChild(userWrap);
+        const icon = document.createElement('i');
+        icon.className = 'bi bi-person-circle text-muted me-1';
+        userWrap.appendChild(icon);
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'd-inline-block text-truncate';
+        nameSpan.style.maxWidth = 'clamp(8rem, 30vw, 18rem)';
+        nameSpan.textContent = entry.username;
+        nameSpan.title = entry.username || '';
+        userWrap.appendChild(nameSpan);
+        if (entry.currentUser || isMeRow) {
+            const meBadge = document.createElement('span');
+            meBadge.className = 'badge text-bg-primary ms-1';
+            meBadge.textContent = 'אני';
+            userWrap.appendChild(meBadge);
+        }
+        tr.appendChild(userTd);
+
+
+        const trustTd = document.createElement('td');
+        trustTd.className = 'text-end' + (active === 'trust' ? ' table-warning fw-bold' : '');
+        trustTd.textContent = trust(entry.trustScore);
+        tr.appendChild(trustTd);
+
+        const votesTd = document.createElement('td');
+        votesTd.className = 'text-end' + (active === 'votes' ? ' table-warning fw-bold' : '');
+        votesTd.textContent = entry.totalVotes;
+        tr.appendChild(votesTd);
+
+        const accTd = document.createElement('td');
+        accTd.className = 'text-end' + (active === 'accuracy' ? ' table-warning fw-bold' : '');
+        accTd.textContent = entry.accuracyPercent + '%';
+        tr.appendChild(accTd);
+
+        return tr;
+    }
+
+    function headerCell(label, active) {
+        return '<th class="text-end' + (active ? ' table-warning' : '') + '">' + label + '</th>';
+    }
+
+    function render() {
+        const data = state.data;
+        if (!data) { return; }
+        const sort = data.sort;
+        const term = searchInput.value.trim().toLowerCase();
+        const filtered = data.entries.filter(function (e) {
+            return !term || (e.username && e.username.toLowerCase().indexOf(term) !== -1);
+        });
+
+        const card = document.createElement('div');
+        card.className = 'card border-0 shadow-sm';
+        const responsive = document.createElement('div');
+        responsive.className = 'table-responsive';
+        const table = document.createElement('table');
+        table.className = 'table table-hover table-sm align-middle mb-0';
+
+        table.innerHTML =
+            '<thead class="table-light"><tr>' +
+            '<th class="text-center text-nowrap">דירוג</th>' +
+            '<th class="text-nowrap">משתמש</th>' +
+            headerCell('ציון אמון', sort === 'trust') +
+            headerCell('תרומות', sort === 'votes') +
+            headerCell('דיוק', sort === 'accuracy') +
+            '</tr></thead>';
+
+        const tbody = document.createElement('tbody');
+        if (filtered.length === 0) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 5;
+            td.className = 'text-center text-muted py-4';
+            td.textContent = 'לא נמצאו משתמשים תואמים.';
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+        } else {
+            filtered.forEach(function (entry) { tbody.appendChild(buildRow(entry, sort, false)); });
+        }
+        table.appendChild(tbody);
+
+        // Sticky "your rank" row when the viewer is not in the filtered list.
+        const me = data.me;
+        const meVisible = me && filtered.some(function (e) { return e.id === me.id; });
+        if (me && !meVisible) {
+            const tfoot = document.createElement('tfoot');
+            tfoot.className = 'border-top';
+            tfoot.appendChild(buildRow(me, sort, true));
+            table.appendChild(tfoot);
+        }
+
+        responsive.appendChild(table);
+        card.appendChild(responsive);
+        content.innerHTML = '';
+        content.appendChild(card);
+        content.classList.remove('d-none');
+        statusBox.classList.add('d-none');
+
+        countLabel.textContent = data.scope === 'all'
+            ? ('מציג ' + filtered.length + ' מתוך ' + data.entries.length)
+            : ('מציג ' + filtered.length + ' מובילים');
+        scopeToggle.textContent = data.scope === 'all' ? 'הצג עשירייה' : 'הצג את כולם';
+    }
+
+    function fetchData() {
+        showLoading();
+        fetch(apiUrl + '?sort=' + encodeURIComponent(state.sort) + '&scope=' + encodeURIComponent(state.scope),
+            {credentials: 'same-origin', headers: {'Accept': 'application/json'}})
+            .then(function (response) {
+                if (!response.ok) { throw new Error('leaderboard request failed'); }
+                return response.json();
+            })
+            .then(function (data) {
+                state.data = data;
+                state.sort = data.sort;
+                state.scope = data.scope;
+                render();
+            })
+            .catch(showError);
+    }
+
+    // Tabs: switch sort and refetch.
+    tabs.forEach(function (tab) {
+        tab.addEventListener('click', function () {
+            const sort = tab.getAttribute('data-sort');
+            if (sort === state.sort) { return; }
+            state.sort = sort;
+            tabs.forEach(function (t) { t.classList.toggle('active', t === tab); });
+            fetchData();
+        });
+    });
+
+    // Search: instant client-side filter of the current data (no refetch).
+    searchInput.addEventListener('input', function () {
+        if (state.data) { render(); }
+    });
+
+    // Scope toggle: switch between top-10 and the full ranking.
+    scopeToggle.addEventListener('click', function () {
+        state.scope = state.scope === 'all' ? 'top' : 'all';
+        fetchData();
+    });
+
+    // Live updates: re-rank in place on decision events, preserving sort + search.
+    if (window.EventSource) {
+        const source = new EventSource(eventsUrl);
+        const onDecision = function () { fetchData(); };
+        source.addEventListener('DECISION_PUBLISHED', onDecision);
+        source.addEventListener('DECISION_REVERTED', onDecision);
+        source.addEventListener('VOTE_SUBMITTED', onDecision);
+        const closeSource = function () { source.close(); };
+        window.addEventListener('pagehide', closeSource);
+        window.addEventListener('beforeunload', closeSource);
+    }
+
+    fetchData();
+});
+</script>
+</body>
+</html>

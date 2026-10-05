@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
+      lang="he" dir="rtl">
+<head th:replace="~{fragments/layout :: head('TRUE · התחברות')}"></head>
+<body class="bg-light">
+
+<nav th:replace="~{fragments/layout :: navbar('')}"></nav>
+
+<main class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-12 col-sm-9 col-md-6 col-lg-5">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-4">
+                    <h1 class="h4 fw-bold text-center mb-4">התחברות ל-TRUE Community</h1>
+
+                    <!-- post-registration success (flash) -->
+                    <div th:if="${registerSuccess}" class="alert alert-success alert-dismissible fade show" role="alert">
+                        <span th:text="${registerSuccess}">הפעולה הושלמה בהצלחה</span>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="סגירה"></button>
+                    </div>
+                    <!-- failed login -->
+                    <div th:if="${param.error}" class="alert alert-danger alert-dismissible fade show" role="alert">
+                        אימייל או סיסמה שגויים.
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="סגירה"></button>
+                    </div>
+                    <!-- after logout -->
+                    <div th:if="${param.logout}" class="alert alert-info alert-dismissible fade show" role="alert">
+                        התנתקתם בהצלחה.
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="סגירה"></button>
+                    </div>
+                    <!-- session expired (e.g. after a role change) -->
+                    <div th:if="${param.expired}" class="alert alert-warning alert-dismissible fade show" role="alert">
+                        ההרשאות שלכם עודכנו. יש להתחבר מחדש.
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="סגירה"></button>
+                    </div>
+
+                    <form th:action="@{/login}" method="post" class="needs-validation" novalidate>
+                        <div class="mb-3">
+                            <label for="username" class="form-label fw-bold small">אימייל</label>
+                            <input type="email" id="username" name="username" class="form-control" required autofocus
+                                   placeholder="name@example.com">
+                            <div class="invalid-feedback">יש להזין כתובת אימייל תקינה.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label fw-bold small">סיסמה</label>
+                            <input type="password" id="password" name="password" class="form-control" required>
+                            <div class="invalid-feedback">יש להזין סיסמה.</div>
+                        </div>
+                        <button type="submit" class="btn btn-navy w-100 fw-bold">התחבר</button>
+                    </form>
+
+                    <p class="text-center text-muted small mt-4 mb-0">
+                        אין לכם חשבון? <a th:href="@{/register}" class="text-navy fw-bold">הרשמה</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<footer th:replace="~{fragments/layout :: footer}"></footer>
+<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+</body>
+</html>

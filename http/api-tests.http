@@ -1,0 +1,359 @@
+### ============================================================================
+### TRUE COMMUNITY - REST API TEST SCRIPT
+### ============================================================================
+### These requests target the endpoints that ACTUALLY exist in the codebase.
+### Run with the IntelliJ HTTP Client or the VS Code "REST Client" extension.
+###
+### IMPORTANT PRECONDITIONS
+### 1. Start MySQL + the app:  docker compose up -d  &&  ./mvnw spring-boot:run
+### 2. Session: the HTTP client keeps cookies within a single run, so the login
+###    request below establishes the session used by the authenticated calls.
+### 3. CSRF: Spring Security CSRF protection is ON (by design - this is a
+###    server-rendered MVC app). A token-less POST/PATCH/DELETE returns 403.
+###    The real write flows happen through Thymeleaf forms that carry the CSRF
+###    token. To exercise the JSON write endpoints from this file you must
+###    either (a) run them through a browser session, or (b) temporarily relax
+###    CSRF for /api/** in SecurityConfig for LOCAL testing only. Do NOT commit
+###    a disabled-CSRF configuration.
+###
+### WHAT IS REST vs WHAT IS MVC-ONLY
+###   REST (JSON):   statement reads, consensus, votes, comments, editor
+###                  decision, users/leaderboard.
+###   MVC-only:      registration (POST /register form), comment up/down votes
+###                  (POST /arena/comments/{id}/vote), evidence (created
+###                  implicitly with a vote), dashboards, editor desk actions.
+###   Not implemented as endpoints: standalone reports/topics/activity/trust-log
+###                  REST APIs (see README "Known technical debt").
+###
+### Seed data (fresh ex4 schema, see DataInitializer):
+###   - 10 topics (ids 1..10), Hebrew names: 1=חוץ 2=ביטחון 3=כלכלה ...
+###   - 13 statements (ids 1..13). #1..#8 PENDING, #9..#10 UNDER_REVIEW,
+###     #11..#12 DECIDED. Statement 1 -> topic {3}; statement 2 -> {2,3}.
+###   - Editor account: editor@truecommunity.local / editor123
+###   - 30 demo users: user1..user30@example.com / password123
+
+@host = http://localhost:8080
+@api = http://localhost:8080/api
+@editorEmail = editor@truecommunity.local
+@editorPassword = editor123
+@userEmail = user1@example.com
+@userPassword = password123
+
+### ============================================================================
+### 0. PUBLIC READS (no auth required)
+### ============================================================================
+
+### Root / feed page (HTML) -> 200
+GET {{host}}/
+
+### Get statement by id -> 200 JSON
+GET {{api}}/statements/1
+Accept: application/json
+
+### Get missing statement -> 404
+GET {{api}}/statements/999999
+Accept: application/json
+
+### Non-numeric id -> 400 (type mismatch)
+GET {{api}}/statements/abc
+Accept: application/json
+
+### Pending statements -> 200 JSON array
+GET {{api}}/statements/pending
+Accept: application/json
+
+### Search: no filters -> pending statements
+GET {{api}}/statements/search
+Accept: application/json
+
+### Search by keyword (Hebrew text in seed) -> 200
+GET {{api}}/statements/search?keyword=אינפלציה
+Accept: application/json
+
+### Search by status -> 200
+GET {{api}}/statements/search?status=PENDING
+Accept: application/json
+
+### Search by topic name (M2M join, case-insensitive) -> 200
+GET {{api}}/statements/search?topic=כלכלה
+Accept: application/json
+
+### Leaderboard (public) -> 200
+GET {{api}}/users/leaderboard
+Accept: application/json
+
+### Get user by id -> 200
+GET {{api}}/users/1
+Accept: application/json
+
+### Missing user -> 404
+GET {{api}}/users/999999
+Accept: application/json
+
+### ============================================================================
+### 1. CONSENSUS (public)
+### ============================================================================
+
+### Verdict consensus -> 200
+GET {{api}}/statements/1/consensus
+Accept: application/json
+
+### Verdict consensus, missing statement -> 404
+GET {{api}}/statements/999999/consensus
+Accept: application/json
+
+### Topic consensus (dynamic, computed from vote_topics) -> 200
+GET {{api}}/statements/1/topic-consensus
+Accept: application/json
+
+### Topic consensus, missing statement -> 404
+GET {{api}}/statements/999999/topic-consensus
+Accept: application/json
+
+### ============================================================================
+### 2. REGISTRATION (MVC form, NOT a REST endpoint)
+### ============================================================================
+### Registration is handled by AuthController via a Thymeleaf form at
+### POST /register (application/x-www-form-urlencoded), not JSON. Duplicate
+### email/username and password mismatch are re-displayed inline on the form.
+
+### Register a new user (requires CSRF token in a real browser session) -> 302 /login
+POST {{host}}/register
+Content-Type: application/x-www-form-urlencoded
+
+username=newuser123&email=newuser123@test.com&password=password123&confirmPassword=password123
+
+### ============================================================================
+### 3. AUTHENTICATION
+### ============================================================================
+
+### Login as editor -> 302 /feed + JSESSIONID
+POST {{host}}/login
+Content-Type: application/x-www-form-urlencoded
+
+username={{editorEmail}}&password={{editorPassword}}
+
+### Login wrong password -> 302 /login?error
+POST {{host}}/login
+Content-Type: application/x-www-form-urlencoded
+
+username={{editorEmail}}&password=wrongpass
+
+### Protected page while unauthenticated -> 302 /login (run after logout)
+GET {{host}}/dashboard
+
+### ============================================================================
+### 4. VOTING  (authenticated; run section 3 editor/user login first)
+### ============================================================================
+### Endpoint: POST /api/statements/{statementId}/votes  (CSRF required)
+### Crowdsourced classification: every vote suggests exactly one topic (suggestedTopicId).
+
+### Vote: success, suggested topic + evidence -> 201
+POST {{api}}/statements/1/votes
+Content-Type: application/json
+
+{
+  "verdict": "TRUE",
+  "explanation": "Confirmed by the official report.",
+  "suggestedTopicId": 3,
+  "evidenceUrl": "https://www.gov.il/",
+  "evidenceDescription": "Official source"
+}
+
+### Vote: success, suggested topic, no evidence -> 201
+POST {{api}}/statements/2/votes
+Content-Type: application/json
+
+{
+  "verdict": "MISLEADING",
+  "suggestedTopicId": 2
+}
+
+### Vote: duplicate on same statement -> 409
+POST {{api}}/statements/1/votes
+Content-Type: application/json
+
+{
+  "verdict": "FALSE",
+  "suggestedTopicId": 3
+}
+
+### Vote: missing verdict -> 400
+POST {{api}}/statements/3/votes
+Content-Type: application/json
+
+{
+  "suggestedTopicId": 3
+}
+
+### Vote: invalid verdict enum -> 400
+POST {{api}}/statements/3/votes
+Content-Type: application/json
+
+{
+  "verdict": "PARTIALLY_TRUE",
+  "suggestedTopicId": 300000
+}
+
+### Vote: missing suggested topic -> 400 (a topic suggestion is required)
+POST {{api}}/statements/3/votes
+Content-Type: application/json
+
+{
+  "verdict": "TRUE"
+}
+
+### Vote: non-existent suggested topic id -> 400 (InvalidTopicSelection)
+POST {{api}}/statements/3/votes
+Content-Type: application/json
+
+{
+  "verdict": "TRUE",
+  "suggestedTopicId": 999999
+}
+
+### Vote: non-existent statement -> 404
+POST {{api}}/statements/999999/votes
+Content-Type: application/json
+
+{
+  "verdict": "TRUE",
+  "suggestedTopicId": 3
+}
+
+### ============================================================================
+### 5. COMMENTS  (read public; write authenticated + CSRF)
+### ============================================================================
+
+### List comments for a statement -> 200, newest first
+GET {{api}}/statements/1/comments
+Accept: application/json
+
+### Add comment -> 201
+POST {{api}}/statements/1/comments
+Content-Type: application/json
+
+{
+  "content": "This matches the cited source."
+}
+
+### Add comment, blank content -> 400
+POST {{api}}/statements/1/comments
+Content-Type: application/json
+
+{
+  "content": "   "
+}
+
+### Comment on non-existent statement -> 404
+POST {{api}}/statements/999999/comments
+Content-Type: application/json
+
+{
+  "content": "hello"
+}
+
+### ============================================================================
+### 6. EDITOR DECISIONS  (editor session required; CSRF)
+### ============================================================================
+### Endpoint: POST/GET /api/editor/statements/{statementId}/decision
+### /api/editor/** requires ROLE_EDITOR (403 for normal users).
+
+### Publish decision (editor) -> 201; statement becomes DECIDED, trust scores update
+POST {{api}}/editor/statements/1/decision
+Content-Type: application/json
+
+{
+  "finalVerdict": "TRUE",
+  "notes": "Confirmed by authoritative sources."
+}
+
+### Duplicate decision on same statement -> 409
+POST {{api}}/editor/statements/1/decision
+Content-Type: application/json
+
+{
+  "finalVerdict": "FALSE",
+  "notes": "Second attempt."
+}
+
+### Missing finalVerdict -> 400
+POST {{api}}/editor/statements/3/decision
+Content-Type: application/json
+
+{
+  "notes": "no verdict"
+}
+
+### Decision on non-existent statement -> 404
+POST {{api}}/editor/statements/999999/decision
+Content-Type: application/json
+
+{
+  "finalVerdict": "TRUE"
+}
+
+### Get existing decision -> 200
+GET {{api}}/editor/statements/1/decision
+Accept: application/json
+
+### Get decision, none published -> 404
+GET {{api}}/editor/statements/3/decision
+Accept: application/json
+
+### ============================================================================
+### 7. AUTHORIZATION EDGE CASES  (log in as a normal USER first - section 3)
+### ============================================================================
+
+### USER login
+POST {{host}}/login
+Content-Type: application/x-www-form-urlencoded
+
+username={{userEmail}}&password={{userPassword}}
+
+### Normal USER attempts editor decision -> 403
+POST {{api}}/editor/statements/2/decision
+Content-Type: application/json
+
+{
+  "finalVerdict": "TRUE"
+}
+
+### Normal USER attempts to read editor decision -> 403
+GET {{api}}/editor/statements/1/decision
+Accept: application/json
+
+### Logout
+POST {{host}}/logout
+
+### Vote while unauthenticated -> 401/403
+POST {{api}}/statements/2/votes
+Content-Type: application/json
+
+{
+  "verdict": "TRUE",
+  "suggestedTopicId": 3
+}
+
+### ============================================================================
+### 8. MALFORMED / CONTENT-TYPE / ROUTING EDGE CASES
+### ============================================================================
+
+### Malformed JSON body -> 400
+POST {{api}}/statements/1/comments
+Content-Type: application/json
+
+{ "content": "broken
+
+### Wrong Content-Type -> 415
+POST {{api}}/statements/1/comments
+Content-Type: text/plain
+
+This is not JSON.
+
+### Method not allowed (no DELETE on this route) -> 405
+DELETE {{api}}/statements/1
+
+### Unknown endpoint -> 404
+GET {{api}}/not-a-real-endpoint
+Accept: application/json

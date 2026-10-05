@@ -1,0 +1,69 @@
+/* TRUE Community - small theme layer on top of Bootstrap 5 (RTL).
+   Brand color + the 5 verdict-tier colors. Everything else uses Bootstrap utilities. */
+
+:root {
+    --tc-navy: #123FA4;
+    --tc-navy-dark: #0d2f7a;
+    --tc-navy-wash: #EEF2FB;
+}
+
+/* Brand helpers */
+.bg-navy { background-color: var(--tc-navy) !important; }
+.bg-navy-wash { background-color: var(--tc-navy-wash) !important; }
+.text-navy { color: var(--tc-navy) !important; }
+.btn-navy { background-color: var(--tc-navy); border-color: var(--tc-navy); color: #fff; }
+.btn-navy:hover, .btn-navy:focus { background-color: var(--tc-navy-dark); border-color: var(--tc-navy-dark); color: #fff; }
+.navbar-brand .brand-accent { color: var(--tc-navy); }
+
+/* Verdict tier badges - distinct hues, all text/background pairs meet WCAG AA */
+.tier { display: inline-block; padding: .25rem .6rem; border-radius: 50rem; font-size: .8rem; font-weight: 700; line-height: 1.2; white-space: nowrap; }
+.tier-TRUE            { background: #198754; color: #fff; } /* green  */
+.tier-FALSE           { background: #dc3545; color: #fff; } /* red    */
+.tier-MISLEADING      { background: #fd7e14; color: #000; } /* orange */
+.tier-MISSING_CONTEXT { background: #ffc107; color: #000; } /* yellow */
+.tier-SATIRE          { background: #6f42c1; color: #fff; } /* purple */
+
+/* Consensus stacked bar (segments carry no text, so vivid fills are fine) */
+.consensus-bar { display: flex; height: 14px; border-radius: 50rem; overflow: hidden; background: #e9ecef; }
+.consensus-bar .seg { height: 100%; }
+.seg-TRUE            { background: #198754; }
+.seg-FALSE           { background: #dc3545; }
+.seg-MISLEADING      { background: #fd7e14; }
+.seg-MISSING_CONTEXT { background: #ffc107; }
+.seg-SATIRE          { background: #6f42c1; }
+
+/* ---- Arena redesign helpers (Stitch-inspired, Bootstrap-based) ---- */
+.hero-accent {
+    position: absolute; inset-inline-start: -3rem; top: -3rem;
+    width: 14rem; height: 14rem; background: var(--tc-navy-wash);
+    border-radius: 50%; filter: blur(40px); opacity: .6; z-index: 0;
+}
+.verdict-card { transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+.verdict-card:hover { transform: translateY(-2px); box-shadow: 0 .25rem .75rem rgba(20, 30, 50, .1); }
+.verdict-card:has(.form-check-input:checked) {
+    border-color: var(--tc-navy) !important;
+    box-shadow: 0 0 0 .2rem var(--tc-navy-wash);
+}
+.verdict-dot { width: 1rem; height: 1rem; border-radius: 50%; display: inline-block; }
+.topic-chip { transition: background-color .12s ease, border-color .12s ease; }
+.topic-chip:has(.form-check-input:checked) {
+    background: var(--tc-navy-wash); border-color: var(--tc-navy) !important; color: var(--tc-navy);
+}
+.donut { width: 170px; height: 170px; border-radius: 50%; position: relative; }
+.donut-hole {
+    position: absolute; inset: 24%; background: #fff; border-radius: 50%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; line-height: 1.1;
+}
+.evidence-row { transition: background-color .12s ease, border-color .12s ease; }
+.evidence-row:hover { background: #f8f9fa; }
+
+/* Presentational clamp: limit long statement text to ~3 lines on the feed (full text lives in the Arena) */
+.statement-clamp {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Allow a flex item to shrink below its content size so text-truncate can clip */
+.min-w-0 { min-width: 0 !important; }
